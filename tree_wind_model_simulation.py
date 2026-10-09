@@ -1,10 +1,3 @@
-#!/usr/bin/env python3
-"""Deterministic 56,160-scenario wind model; see README_CN.md for assumptions.
-
-This revision corrects willow/Chinese scholar tree geometry and searches for
-the FIRST load/capacity crossing across the discontinuous wind-load branches.
-It retains the supplied mechanical model and exposes geometry fallbacks.
-"""
 from __future__ import annotations
 
 import argparse
@@ -32,7 +25,7 @@ LATERAL_ROOT_DIAMETER_MIN_MM = 20.0
 LATERAL_ROOT_DIAMETER_MAX_MM = 40.0
 CROWN_MASS_ALLOMETRY_A = 0.12
 CROWN_MASS_ALLOMETRY_B = 2.18
-SP_LENGTH_NORMALIZER_M = 1.0  # assumed reference length, not a measurement
+SP_LENGTH_NORMALIZER_M = 1.0  
 NUMERICAL_BENDING_SCALE_NM2 = 1.0e9  # supplied numerical scale, not measured EI
 MAX_SEARCH_MEAN_MPS = 160.0
 SOLVER_VERSION = "first_crossing_piecewise_v1"
@@ -75,7 +68,6 @@ def original_species(
 # Fraxinus chinensis equations ln(H)=0.3157+0.5624ln(DBH) and
 # ln(CW)=-0.0204+0.7253ln(DBH). Its remaining mechanical/root inputs are
 # supplied representative assumptions (some based on broad-leaved medians),
-# not measurements of Chinese ash; all values are recorded in the audit.
 TREE_PARAMS = OrderedDict(
     [
         (
@@ -392,7 +384,6 @@ def calc_wind_moment(
     dbh_cm = dbh_m * 100.0
     n_iter = 3 if dbh_cm < 20.0 else (2 if dbh_cm < 35.0 else 1)
     fi, hi = force, h_cg
-    # A declared numerical scale in N*m^2, not a measured modulus or EI.
     e_dummy = NUMERICAL_BENDING_SCALE_NM2
     for _ in range(n_iter):
         delta_i = fi * (hi**3) / (3.0 * e_dummy)
@@ -420,9 +411,6 @@ def calc_stem_resistance(
     z = eta_z * math.pi * (dbh_m**3) / 32.0
     z_base = eta_z * math.pi * (dbh_base_m**3) / 32.0
     m_stem = sigma_eff * z
-    # kbase was present in the old factorial table but omitted from the old
-    # code path.  It applies only to the base check, matching the supplied
-    # model's base-effective-strength definition.
     m_stem_base = sigma_eff * kbase * z_base
     return min(m_stem, m_stem_base)
 
@@ -466,13 +454,11 @@ def calc_root_resistance(
     f_single_lateral = 15.22 * (lateral_diameter_mm**1.61)
     f_lateral = ksyn * KSHEAR * root["n_side"] * f_single_lateral
 
-    # kwet is applied once to root force. fm is a recorded reference value;
-    # this code does not execute an fm-based sensitivity calculation.
+    
     f_root = (f_tap_total + f_lateral) * rain_config["kwet"]
     m_root = f_root * h_root
 
-    # Supplied assumption: m_kg=0.12*DBH_cm^2.18. Species-specific empirical
-    # support for these coefficients has not been established in this audit.
+   
     crown_mass = CROWN_MASS_ALLOMETRY_A * (dbh_cm**CROWN_MASS_ALLOMETRY_B)
     m_weight = crown_mass * GRAVITY * h_root
     m_equation_33 = m_root + m_weight
@@ -481,8 +467,6 @@ def calc_root_resistance(
 
 
 def wind_branches() -> list[tuple[float, float]]:
-    # nextafter evaluates the representable left limits with the correct
-    # branch (<15 or <25), without crossing the discontinuity during bisection.
     return [
         (0.0, math.nextafter(15.0, -math.inf)),
         (15.0, math.nextafter(25.0, -math.inf)),
@@ -491,12 +475,6 @@ def wind_branches() -> list[tuple[float, float]]:
 
 
 def first_crossing_v(moment, resistance: float) -> float:
-    """First crossing on increasing continuous branches; inf means censored.
-
-    main() checks each geometry on 2,001 points per branch before generation.
-    That is a numerical grid check, not a mathematical monotonicity proof.
-    Modified parameters require rerunning this check.
-    """
     if not math.isfinite(resistance) or resistance <= 0:
         raise ValueError("Resistance must be finite and positive")
     for low, high in wind_branches():
@@ -570,8 +548,7 @@ def solve_critical_v(
     root_r = calc_root_resistance(crown_width, dbh_m, site, rain_config, tree_para)
     resistance = min(stem_r, root_r)
 
-    # Load drops at 15 and 25 m/s. Search the branches in increasing order;
-    # a global bisection can return a later crossing instead of the first.
+   
     v_mean = first_crossing_v(
         lambda v: calc_wind_moment(v, height, crown_width, dbh_m, tree_para),
         resistance,
